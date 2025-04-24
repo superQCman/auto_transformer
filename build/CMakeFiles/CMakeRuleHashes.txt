@@ -1,0 +1,7 @@
+# Hashes of file build rules.
+e94d88fe876404dcd37643efa93c6412 CMakeFiles/clean_all
+ed7354e94e3a5af168a0c62c9d85c307 CMakeFiles/matmul_cu
+dc3150b30658702699743f61a786678e CMakeFiles/run
+7cd4bd40623441c384a16a6833d3afbd bin/matmul_cu
+83d547bbe3168cd18b33ef194eca2867 cuobj
+0724460317c795864ef8ab273df1edff cuobj/matmul.o
