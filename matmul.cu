@@ -23,14 +23,55 @@ __global__ void matmul_kernel(float* A, float* B, float* C, int M, int N, int K,
     }
 } 
 
+// 辅助函数：在GPU上执行view操作
+__device__ int compute_flat_index(int* idx, int* shape, int ndim) {
+    int flat_idx = 0;
+    int stride = 1;
+    for (int i = ndim - 1; i >= 0; --i) {
+        flat_idx += idx[i] * stride;
+        stride *= shape[i];
+    }
+    return flat_idx;
+}
+//transpose
+__global__ void transpose_kernel(
+    const float* input,
+    float* output,
+    int* shape,
+    int ndim,
+    int dim0,
+    int dim1,
+    int total_elements
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= total_elements) return;
 
-int main(int argc, char* argv[]){
-    int srcX = atoi(argv[1]);
-    int srcY = atoi(argv[2]);
-    int dstX = atoi(argv[3]);
-    int dstY = atoi(argv[4]);
-    int block_size = atoi(argv[5]);
+    // 1. 将 flat index 映射成多维索引
+    int idx_nd[10];  // 假设不超过 10 维
+    int temp = idx;
+    int stride = 1;
 
+    for (int i = ndim - 1; i >= 0; --i) {
+        stride = 1;
+        for (int j = i + 1; j < ndim; ++j)
+            stride *= shape[j];
+        idx_nd[i] = temp / stride;
+        temp %= stride;
+    }
+
+    // 2. 交换 dim0 和 dim1
+    int tmp = idx_nd[dim0];
+    idx_nd[dim0] = idx_nd[dim1];
+    idx_nd[dim1] = tmp;
+
+    // 3. 映射回新的 flat index（输出）
+    int out_idx = compute_flat_index(idx_nd, shape, ndim);
+
+    // 4. 写入输出
+    output[out_idx] = input[idx];
+}
+
+void matmul(int srcX, int srcY, int dstX, int dstY, int block_size){
     int64_t batch_size = 0;
     int64_t M = 0;
     int64_t N = 0;
@@ -105,6 +146,26 @@ int main(int argc, char* argv[]){
     cudaFree(d_C);
     cudaFree(send_size_d);
 
+}
+
+int main(int argc, char* argv[]){
+    int srcX = atoi(argv[1]);
+    int srcY = atoi(argv[2]);
+    int dstX = atoi(argv[3]);
+    int dstY = atoi(argv[4]);
+    int block_size = atoi(argv[5]);
+
+    bool* is_end = (bool*)malloc(sizeof(bool));
+    cudaMalloc((void**)&is_end, sizeof(bool));
+    while(true){
+        receiveMessage(srcX, srcY, dstX, dstY, is_end, sizeof(bool));
+        bool is_end_host = false;
+        cudaMemcpy(&is_end_host, is_end, sizeof(bool), cudaMemcpyDeviceToHost);
+        if(is_end_host){
+            break;
+        }
+        matmul(srcX, srcY, dstX, dstY, block_size);
+    }
     // cudaMemcpy(C, d_C, batch_size * M * N * sizeof(float), cudaMemcpyDeviceToHost);
     
 }

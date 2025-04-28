@@ -2,7 +2,7 @@
 phase1:
   # Process 1
   - cmd: "$SIMULATOR_ROOT/snipersim/run-sniper"
-    args: ["--", "$BENCHMARK_ROOT/build/bin/Transformer", "0", "1"]
+    args: ["--", "$BENCHMARK_ROOT/build/bin/Transformer", "--srcX", "0", "--srcY", "1", "--topology_width", "2"]
     log: "sniper.0.1.log"
     is_to_stdout: false
     clock_rate: 3
@@ -31,7 +31,7 @@ phase1:
 phase2:
   # Process 0
   - cmd: "$SIMULATOR_ROOT/popnet_chiplet/build/popnet"
-    args: ["-A", "4", "-c", "1", "-V", "3", "-B", "12", "-O", "12", "-F", "2", "-L", "1000", "-T", "1000000000", "-r", "1", "-I", "../bench.txt", "-G", "/home/qc/Chiplet_Heterogeneous_newVersion_gem5/Chiplet_Heterogeneous_newVersion/benchmark/auto_transformer/mesh_{width}_{height}.gv", "-D", "../delayInfo.txt", "-P"]
+    args: ["-A", "4", "-c", "1", "-V", "3", "-B", "12", "-O", "12", "-F", "2", "-L", "1000", "-T", "1000000000000000000000", "-r", "1", "-I", "../bench.txt", "-G", "/home/qc/Chiplet_Heterogeneous_newVersion_gem5/Chiplet_Heterogeneous_newVersion/benchmark/auto_transformer/mesh_2_2.gv", "-D", "../delayInfo.txt", "-P"]
     log: "popnet_0.log"
     is_to_stdout: false
-    clock_rate: 3
+    clock_rate: 1

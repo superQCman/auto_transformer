@@ -47,7 +47,7 @@ def generate_yaml_file_from_csv(csv_path="device_map.csv", yml_path="mlp_config.
 
                 if device == "CPU":
                     file.write(f'  - cmd: "$SIMULATOR_ROOT/snipersim/run-sniper"\n')
-                    file.write(f'    args: ["--", "$BENCHMARK_ROOT/build/bin/Transformer", "{x}", "{y}"]\n')
+                    file.write(f'    args: ["--", "$BENCHMARK_ROOT/build/bin/Transformer", "--srcX", "{x}", "--srcY", "{y}", "--topology_width", "{width}"]\n')
                     file.write(f'    log: "sniper.{x}.{y}.log"\n')
                     file.write(f'    is_to_stdout: false\n')
                     file.write(f'    clock_rate: {clock_rate_map[node_id]}\n')
@@ -65,7 +65,7 @@ def generate_yaml_file_from_csv(csv_path="device_map.csv", yml_path="mlp_config.
             file.write("\nphase2:\n")
             file.write("  # Process 0\n")
             file.write('  - cmd: "$SIMULATOR_ROOT/popnet_chiplet/build/popnet"\n')
-            file.write(f'    args: ["-A", "{width * height}", "-c", "1", "-V", "3", "-B", "12", "-O", "12", "-F", "2", "-L", "1000", "-T", "1000000000", "-r", "1", "-I", "../bench.txt", "-G", "{GV_path}", "-D", "../delayInfo.txt", "-P"]\n')
+            file.write(f'    args: ["-A", "{width * height}", "-c", "1", "-V", "3", "-B", "12", "-O", "12", "-F", "2", "-L", "1000", "-T", "1000000000000000000000", "-r", "1", "-I", "../bench.txt", "-G", "{GV_path}", "-D", "../delayInfo.txt", "-P"]\n')
             file.write('    log: "popnet_0.log"\n')
             file.write('    is_to_stdout: false\n')
             file.write(f'    clock_rate: {popnet_clock_rate}\n')
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     
     parser.add_argument("-w", "--width", type=int, default=2, help="topology width")
     parser.add_argument("-H", "--height", type=int, default=2, help="topology height")
-    parser.add_argument("-g", "--GV_path", type=str, default="/home/qc/Chiplet_Heterogeneous_newVersion_gem5/Chiplet_Heterogeneous_newVersion/benchmark/auto_transformer/mesh_{width}_{height}.gv", help="Path to the GV file")
-    parser.add_argument("-p", "--popnet_clock_rate", type=int, default=3, help="popnet clock rate")
+    parser.add_argument("-g", "--GV_path", type=str, default=f"/home/qc/Chiplet_Heterogeneous_newVersion_gem5/Chiplet_Heterogeneous_newVersion/benchmark/auto_transformer/mesh_2_2.gv", help="Path to the GV file")
+    parser.add_argument("-p", "--popnet_clock_rate", type=int, default=1, help="popnet clock rate")
     args = parser.parse_args()
     generate_yaml_file_from_csv(args.csv_path, args.yml_path, args.width, args.height, args.GV_path, args.popnet_clock_rate)

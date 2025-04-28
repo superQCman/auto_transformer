@@ -5,6 +5,7 @@ project(Transformer LANGUAGES CXX)
 set(CMAKE_PREFIX_PATH "~/libtorch-cpu/libtorch")  # LibTorch路径
 set(SIMULATOR_ROOT $ENV{SIMULATOR_ROOT})
 set(BENCHMARK_ROOT ${SIMULATOR_ROOT}/benchmark/auto_transformer)
+add_subdirectory(third_party/CLI11)
 
 # 打印路径进行调试
 message(STATUS "SIMULATOR_ROOT = ${SIMULATOR_ROOT}")
@@ -35,6 +36,7 @@ find_package(Torch REQUIRED)
 # C++ PyTorch目标
 add_executable(Transformer transformer.cpp)
 target_link_libraries(Transformer ${TORCH_LIBRARIES} ${INTERCHIPLET_C_LIB} pthread)
+target_include_directories(Transformer PUBLIC third_party/CLI11/include)
 
 # 添加自定义命令来编译CUDA文件 - 模拟makefile方式
 # 首先创建必要的目录

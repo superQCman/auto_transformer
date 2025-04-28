@@ -8,7 +8,9 @@
 #include <unordered_map>
 #include <string>
 #include <algorithm>
+#include <thread>
 #include "apis_c.h"
+#include "cmdline_opt.h"
 
 
 int max_seq_len = 1000;
@@ -105,7 +107,7 @@ torch::Tensor custom_matmul(torch::Tensor a, torch::Tensor b){
     return c.clone();
 }
 
-torch::Tensor custom_matmul_GPU(torch::Tensor a, torch::Tensor b, int srcX, int srcY, int dstX, int dstY){
+void custom_matmul_GPU(torch::Tensor a, torch::Tensor b, torch::Tensor &c, int srcX, int srcY, int dstX, int dstY){
     // 确保输入张量是Float类型
     a = a.to(torch::kFloat32);
     b = b.to(torch::kFloat32);
@@ -152,6 +154,8 @@ torch::Tensor custom_matmul_GPU(torch::Tensor a, torch::Tensor b, int srcX, int 
     send_size[1] = m;
     send_size[2] = k;
     send_size[3] = n;
+    bool is_end = false;
+    InterChiplet::sendMessage(dstX, dstY, srcX, srcY, &is_end, sizeof(bool));
     InterChiplet::sendMessage(dstX, dstY, srcX, srcY, send_size, 4*sizeof(int64_t));
     // InterChiplet::sendMessage(dstX, dstY, srcX, srcY, &batch_size, sizeof(int64_t));
     // InterChiplet::sendMessage(dstX, dstY, srcX, srcY, &m, sizeof(int64_t));
@@ -196,9 +200,9 @@ torch::Tensor custom_matmul_GPU(torch::Tensor a, torch::Tensor b, int srcX, int 
     delete[] b_array;
     
     // 创建结果张量并复制数据
-    torch::Tensor c = torch::from_blob(c_array, c_shape, [c_array](void* p) { delete[] c_array; }, torch::kFloat32);
+    c = torch::from_blob(c_array, c_shape, [c_array](void* p) { delete[] c_array; }, torch::kFloat32);
     
-    return c.clone();
+    // return c.clone();
 }
 
 /* 
@@ -233,12 +237,27 @@ torch::Tensor parallel_matmul(torch::Tensor a, torch::Tensor b, int dim, int src
         auto chunks_b = torch::chunk(b, device_num, dim);  // 沿第-1维切
         std::vector<torch::Tensor> b_list(chunks_b.begin(), chunks_b.end());
 
-        std::vector<torch::Tensor> c_list;
-        // 输出每个 chunk 的 shape
+        std::vector<torch::Tensor> c_list(b_list.size());
+        // 在创建线程前初始化张量
+        for (size_t i = 0; i < b_list.size(); ++i) {
+            // 创建正确形状的张量作为输出
+            std::vector<int64_t> output_shape = a.sizes().vec();
+            output_shape.back() = b_list[i].size(-1);
+            c_list[i] = torch::zeros(output_shape, a.options());
+        }
+
+        // 然后创建线程
+        std::vector<std::thread> threads;
         for (size_t i = 0; i < b_list.size(); ++i) {
             std::cout << "b_list[" << i << "] shape: " << b_list[i].sizes() << std::endl;
-            c_list.push_back(custom_matmul_GPU(a, b_list[i], src_x, src_y, device_map[i].first, device_map[i].second));
+            threads.push_back(std::thread(custom_matmul_GPU, a, b_list[i], 
+                     std::ref(c_list[i]), src_x, src_y, 
+                     device_map[i].first, device_map[i].second));
         }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+        std::cout<<"#########################"<<std::endl;
 
         c = torch::cat(c_list, dim);
     }
@@ -384,6 +403,7 @@ struct NormImpl : torch::nn::Module {
 TORCH_MODULE(Norm);  // 别名：Norm = std::shared_ptr<NormImpl>
 
 // EncoderLayer 实现
+// 对于序列并行，在EncoderLayer中就要拆分x到多个GPU上
 struct EncoderLayerImpl : torch::nn::Module {
     Norm norm_1, norm_2;
     MultiHeadAttention attn;
@@ -532,7 +552,7 @@ struct TransformerImpl : torch::nn::Module {
 
 TORCH_MODULE(Transformer);
 
-bool readCSV(std::string csv_path, std::unordered_map<int, std::pair<int, int>> &device_map, int &device_num, int &cpu_node, int topology_width, int topology_height) {
+bool readCSV(std::string csv_path, std::unordered_map<int, std::pair<int, int>> &device_map, int &device_num, int &cpu_node, int topology_width) {
     std::ifstream file(csv_path);
     if (!file.is_open()) {
         std::cerr << "无法打开文件: " << csv_path << std::endl;
@@ -565,8 +585,9 @@ bool readCSV(std::string csv_path, std::unordered_map<int, std::pair<int, int>> 
             if (device == "CPU") {
                 cpu_node = node;
             } else {
-                int x = node % topology_width;
-                int y = node / topology_width;
+                std::cout << "node: " << node << std::endl;
+                int x = node / topology_width;
+                int y = node % topology_width;
                 device_map[device_index++] = std::make_pair(x, y);
                 device_num++;
             }
@@ -593,17 +614,21 @@ bool readCSV(std::string csv_path, std::unordered_map<int, std::pair<int, int>> 
     return true;
 }
 
-int main(int argc, char* argv[]) {
-    const int64_t d_model = 512;
-    const int64_t heads = 8;
-    const int64_t N = 6;
-    const int64_t src_vocab = 1024;
-    const int64_t trg_vocab = 1024;
-    const int64_t batch_size = 10;
-    const int64_t seq_len = 100;
-    const double dropout = 0.1;
-    const int topology_width = 2;
-    const int topology_height = 2;
+int main(int argc, const char* argv[]) {
+    CmdLineOptions opt;
+    if (opt.parse(argc, argv) != 0) {
+        return 0;
+    };
+    const int64_t d_model = opt.d_model;
+    const int64_t heads = opt.num_heads;
+    const int64_t N = opt.N;
+    const int64_t src_vocab = opt.src_vocab;
+    const int64_t trg_vocab = opt.trg_vocab;
+    const int64_t batch_size = opt.batch_size;
+    const int64_t seq_len = opt.seq_len;
+    const double dropout = opt.dropout;
+    const int topology_width = opt.m_topology_width;
+    // const int topology_height = 2;
 
     max_seq_len = seq_len;
 
@@ -612,7 +637,7 @@ int main(int argc, char* argv[]) {
     int cpu_node = -1;
     
     try {
-        if (!readCSV("../../mapDevice.csv", device_map, device_num, cpu_node, topology_width, topology_height)) {
+        if (!readCSV("../../mapDevice.csv", device_map, device_num, cpu_node, topology_width)) {
             std::cerr << "读取CSV文件失败" << std::endl;
             return 1;
         }
@@ -621,8 +646,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    int srcX = std::stoi(argv[1]);
-    int srcY = std::stoi(argv[2]);
+    int srcX = opt.m_srcX;
+    int srcY = opt.m_srcY;
 
     // 使用randn创建Float类型张量，或者显式转换类型
     torch::Tensor a = torch::randn({10, 10, 10, 10}, torch::kFloat32);
@@ -640,13 +665,20 @@ int main(int argc, char* argv[]) {
     model->eval(); // 推理模式
 
     // 随机输入
-    auto src = torch::randn({batch_size, seq_len}, torch::kFloat32);
-    auto trg = torch::randn({batch_size, seq_len}, torch::kFloat32);
+    auto src = torch::randint(0, src_vocab, {batch_size, seq_len}, torch::kLong);
+    auto trg = torch::randint(0, trg_vocab, {batch_size, seq_len}, torch::kLong);
 
     auto src_mask = torch::ones({batch_size, 1, seq_len});
     auto trg_mask = torch::tril(torch::ones({batch_size, seq_len, seq_len}));
 
     auto output = model->forward(src, trg, src_mask, trg_mask);
+    
+    bool is_end = true;
+    for(int i = 0; i < device_num; i++){
+        int dstX = device_map[i].first;
+        int dstY = device_map[i].second;
+        InterChiplet::sendMessage(dstX, dstY, srcX, srcY,  &is_end, sizeof(bool));
+    }
 
     std::cout << "Output shape: " << output.sizes() << std::endl;
 
