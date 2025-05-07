@@ -10,8 +10,8 @@
 
 
 __global__ void matmul_kernel(float* A, float* B, float* C, int M, int N, int K, int batch_size){
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
     int batch = blockIdx.z * blockDim.z + threadIdx.z;
 
     if(row < M && col < N && batch < batch_size){

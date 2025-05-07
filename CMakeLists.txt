@@ -67,7 +67,7 @@ add_custom_target(matmul_cu ALL DEPENDS ${CMAKE_BINARY_DIR}/bin/matmul_cu)
 
 # 添加run目标模拟makefile中的run
 add_custom_target(run
-    COMMAND ${SIMULATOR_ROOT}/interchiplet/bin/interchiplet ${CMAKE_CURRENT_SOURCE_DIR}/auto_transformer.yml -w 4
+    COMMAND ${SIMULATOR_ROOT}/interchiplet/bin/interchiplet ${CMAKE_CURRENT_SOURCE_DIR}/auto_transformer.yml -w 2
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running auto_transformer with interchiplet"
 )
